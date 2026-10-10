@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>FormaMetrics</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap">
+<style>
+/* ===== BLOQUE 1: colores y fondo (oscuro, con manchas de luz) ===== */
+:root{--bg:#070b14;--ink:#eef4ff;--mute:#9aa8c2;--a1:#5eead4;--a2:#6ea8ff;--good:#4ade80;--bad:#ff7a6b;--neu:#9aa8c2;
+--glass:linear-gradient(135deg,rgba(255,255,255,.14),rgba(255,255,255,.04));--edge:rgba(255,255,255,.18);
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.4;min-height:100vh}
+body::before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;
+background:radial-gradient(40% 35% at 20% 15%,rgba(94,234,212,.28),transparent 70%),radial-gradient(45% 40% at 85% 30%,rgba(110,168,255,.26),transparent 70%),radial-gradient(40% 40% at 50% 95%,rgba(140,90,255,.22),transparent 70%);
+animation:deriva 22s ease-in-out infinite alternate}
+@keyframes deriva{to{transform:translate(3%,2%) scale(1.06)}}
+@media (prefers-reduced-motion:reduce){body::before{animation:none}*{transition:none!important}}
+/* ===== BLOQUE 2: cristal líquido ===== */
+.glass{background:var(--glass);border:1px solid var(--edge);border-radius:22px;
+backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);
+box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 12px 32px rgba(0,0,0,.35)}
+main{max-width:900px;margin:0 auto;padding:14px 14px 130px}
+.top{display:flex;align-items:center;gap:10px;padding:6px 2px 14px}
+.top h1{margin:0;font-size:1.35rem;font-weight:800;letter-spacing:-.02em}
+.top small{color:var(--mute);display:block;font-weight:400;font-size:.8rem;letter-spacing:0}
+h2{font-size:1.05rem;margin:0 0 10px;font-weight:600}
+.card{padding:16px;margin-bottom:14px}
+.hide{display:none!important}
+#login .panel{border-radius:26px;margin:16px}#login input{width:100%;margin-bottom:10px}
+/* ===== BLOQUE 3: botones y campos ===== */
+button,input,select{font:inherit;color:var(--ink)}
+button{cursor:pointer;border:0;border-radius:14px;padding:10px 16px;font-weight:600;background:rgba(255,255,255,.1);border:1px solid var(--edge)}
+button.pri{background:linear-gradient(135deg,var(--a1),var(--a2));color:#06202a;border:0}
+button.del{padding:2px 8px;color:var(--bad);background:transparent;border:0}
+:focus-visible{outline:2px solid var(--a1);outline-offset:2px}
+input[type=date],input[type=number],input[type=email],input[type=password],select{background:rgba(255,255,255,.08);border:1px solid var(--edge);border-radius:12px;padding:9px 11px;min-width:0}
+select option{color:#000}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{padding:7px 13px;font-size:.9rem}
+.seg button.on{background:linear-gradient(135deg,var(--a1),var(--a2));color:#06202a;border:0}
+/* ===== BLOQUE 4: inicio ===== */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{padding:12px 14px}
+.kpi .n{color:var(--mute);font-size:.82rem}
+.kpi .v{font-size:1.6rem;font-weight:800;letter-spacing:-.02em}
+.kpi .v small{font-size:.8rem;color:var(--mute);font-weight:400}
+.kpi .d{font-weight:600;font-size:.85rem}
+.kpi .p{color:var(--mute);font-size:.78rem}
+.good{color:var(--good)}.bad{color:var(--bad)}.neu{color:var(--neu)}
+.kpi svg{width:100%;height:34px;margin-top:4px}
+/* ===== BLOQUE 5: gráfica, tablas, fotos ===== */
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chip{border:2px solid var(--c);background:transparent;padding:4px 12px;border-radius:20px;font-size:.88rem}
+.chip.on{background:var(--c);color:#06121a}.chip.off{opacity:.5}
+#grafica{position:relative}#grafica svg{width:100%;height:auto;display:block}
+.tip{position:absolute;pointer-events:none;transform:translate(-50%,-100%);background:rgba(10,16,30,.94);border:1px solid var(--edge);border-radius:10px;padding:6px 10px;font-size:.82rem;white-space:nowrap;z-index:3}
+.btnlab{display:inline-block;cursor:pointer;border-radius:14px;padding:9px 14px;background:rgba(255,255,255,.1);border:1px solid var(--edge);font-weight:600}
+.ex{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}.ex img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:12px}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.1);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}th{color:var(--mute);font-weight:600}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.pair img,.slot img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:16px;border:1px solid var(--edge);display:block;background:rgba(255,255,255,.05)}
+.empty{color:var(--mute);padding:8px 0}
+/* ===== BLOQUE 6: menú inferior ===== */
+nav{position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));max-width:560px;margin:0 auto;display:flex;justify-content:space-around;align-items:center;padding:8px 6px;z-index:5}
+nav button{background:transparent;border:0;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:.68rem;color:var(--mute);padding:6px 3px;min-width:46px}
+nav button.on{color:var(--a1)}
+nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+nav .plus{width:54px;height:54px;border-radius:50%;padding:0;background:linear-gradient(135deg,var(--a1),var(--a2));color:#06202a;margin-top:-26px;box-shadow:0 8px 24px rgba(94,234,212,.4);justify-content:center}
+nav .plus svg{width:26px;height:26px;stroke-width:2.6}
+/* ===== BLOQUE 7: ventana de registro ===== */
+.sheet{position:fixed;inset:0;z-index:10;background:rgba(3,6,12,.6);backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center}
+.panel{width:100%;max-width:640px;max-height:92vh;overflow:auto;padding:18px;border-radius:26px 26px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));animation:sube .28s ease-out}
+@keyframes sube{from{transform:translateY(40px);opacity:0}}
+.field{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+.field label small{display:block;color:var(--mute);font-size:.78rem}
+.field input{width:90px;text-align:right}
+.field .delta{min-width:72px;text-align:right;font-weight:800}
+.slots{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.slot{position:relative;border:1px dashed var(--edge);border-radius:16px;padding:8px;text-align:center;cursor:pointer;display:block}
+.slot input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.slot .ph{aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:2rem}
+.slot b{display:block;margin-top:4px;font-size:.88rem}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-top:14px}
+</style>
+</head>
+<body>
+<main>
+  <!-- Cabecera con logo -->
+  <div class="top">
+    <!-- Logo: una F de cinta métrica cuya barra superior sube como una flecha -->
+    <svg width="44" height="44" viewBox="0 0 48 48" aria-label="Logo FormaMetrics">
+      <defs><linearGradient id="lg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#5eead4"/><stop offset="1" stop-color="#6ea8ff"/></linearGradient></defs>
+      <rect x="1" y="1" width="46" height="46" rx="14" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.22)"/>
+      <g stroke="url(#lg)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path d="M16 38V15"/><path d="M16 25h11"/><path d="M16 17 35 9"/><path d="M28 8.5h7.5V16"/>
+      </g>
+    </svg>
+    <h1>FormaMetrics<small>Mide. Mejora. Repite.</small></h1>
+    <button id="btnSalir" class="hide" style="margin-left:auto;padding:7px 12px;font-size:.85rem">Salir</button>
+  </div>
+
+  <!-- Vista: Inicio -->
+  <section id="v-inicio">
+    <p id="resumen" style="margin:0 2px 12px;color:var(--mute)"></p>
+    <div class="kpis" id="kpis"></div>
+    <div class="glass card hide" id="vacio" style="margin-top:14px">
+      <p class="empty">Aún no tienes registros. Pulsa + para añadir el primero (puede ser de una fecha pasada).</p>
+    </div>
+  </section>
+
+  <!-- Vista: Gráfica -->
+  <section id="v-grafica" class="hide">
+    <div class="glass card">
+      <h2>Evolución y estimación a 1 semana</h2>
+      <p style="color:var(--mute);margin-top:0;font-size:.88rem">Escala común: % de cambio desde el primer registro. La línea discontinua es una estimación según tu ritmo reciente.</p>
+      <div class="chips" id="chips"></div>
+      <div id="grafica"></div>
+    </div>
+  </section>
+
+  <!-- Vista: Objetivos -->
+  <section id="v-objetivos" class="hide">
+    <div class="glass card"><h2>Mis objetivos</h2>
+      <p style="color:var(--mute);margin-top:0;font-size:.88rem">Escribe el valor al que quieres llegar en cada medida. Déjalo vacío si no quieres meta.</p>
+      <div id="objetivos"></div></div>
+  </section>
+
+  <!-- Vista: Historial -->
+  <section id="v-historial" class="hide">
+    <div class="glass card"><h2>Historial</h2><div class="scroll" id="historial"></div></div>
+  </section>
+
+  <!-- Vista: Fotos -->
+  <section id="v-fotos" class="hide">
+    <div class="glass card">
+      <h2>Comparar fotos</h2>
+      <div class="seg" id="posturas"></div>
+      <div class="row" style="justify-content:flex-start">
+        <select id="fotoA" aria-label="Fecha inicial"></select>
+        <select id="fotoB" aria-label="Fecha final"></select>
+      </div>
+      <div class="pair" id="comparador"></div>
+    </div>
+  </section>
+</main>
+
+<!-- Pantalla de acceso (solo entra quien tenga cuenta) -->
+<div class="sheet" id="login" style="align-items:center">
+  <form class="glass panel" id="fLogin" style="max-width:380px">
+    <h2>Acceder a FormaMetrics</h2>
+    <input type="email" id="lEmail" placeholder="Correo" autocomplete="username" required>
+    <input type="password" id="lPass" placeholder="Contraseña" autocomplete="current-password" required>
+    <p id="lErr" class="bad" style="min-height:1.2em;margin:0 0 8px"></p>
+    <button class="pri" style="width:100%">Entrar</button>
+  </form>
+</div>
+
+<!-- Menú inferior -->
+<nav class="glass" id="menu"></nav>
+
+<!-- Ventana nueva de registro (2 pasos) -->
+<div class="sheet hide" id="sheet" role="dialog" aria-modal="true" aria-label="Nuevo registro">
+  <div class="glass panel" id="panel"></div>
+</div>
+
+<script>
+/* ===== BLOQUE 8: datos básicos ===== */
+const MEDIDAS = [
+  {k:'peso',n:'Peso',u:'kg',c:'#5eead4'},{k:'cintura',n:'Cintura',u:'cm',c:'#ff7a6b'},
+  {k:'pecho',n:'Pecho',u:'cm',c:'#b794ff'},{k:'cadera',n:'Cadera',u:'cm',c:'#ffc857'},
+  {k:'brazo',n:'Brazo',u:'cm',c:'#6ea8ff'},{k:'muslo',n:'Muslo',u:'cm',c:'#7ee081'},{k:'gemelo',n:'Gemelos',u:'cm',c:'#ff9ff3'}];
+// Los objetivos son valores numéricos por medida: estado.objetivos = {peso:78, cintura:85, ...}
+const POS = [['frente','Frente'],['espalda','Trasera'],['izq','Perfil izquierdo'],['der','Perfil derecho']];
+const DIA = 86400000;
+
+/* ===== BLOQUE 9: conexión con Supabase (login, datos y fotos privadas) ===== */
+const SUPA_URL = 'https://siakyblxaekkgtxkbwke.supabase.co';
+const SUPA_KEY = 'sb_publishable_1L2wCXFUlpPbmCnngpDqPA_zqKjL5C2'; // clave pública: la seguridad la dan el login y las reglas RLS
+const db = supabase.createClient(SUPA_URL, SUPA_KEY);
+let estado = {objetivos:{}, registros:[]}, uid = null;
+const $ = id => document.getElementById(id);
+
+// Descarga registros y objetivos; las fotos se piden con enlaces firmados que caducan (6 h)
+async function cargarDatos(){
+  const {data:rs, error} = await db.from('registros').select('*').order('fecha');
+  if(error) throw error;
+  const rutas = [];
+  rs.forEach(r=>{ Object.values(r.fotos||{}).forEach(p=>rutas.push(p)); (r.extra||[]).forEach(p=>rutas.push(p)); });
+  const urls = {};
+  if(rutas.length){
+    const {data:f} = await db.storage.from('fotos').createSignedUrls(rutas, 21600);
+    (f||[]).forEach(x=>{ if(x.signedUrl) urls[x.path]=x.signedUrl; });
+  }
+  // _fp y _ep guardan las rutas reales (para poder borrarlas); fotos y extra guardan los enlaces para mostrarlas
+  estado.registros = rs.map(r=>({id:r.id, fecha:r.fecha, m:r.medidas||{}, _fp:r.fotos||{}, _ep:r.extra||[],
+    fotos:Object.fromEntries(Object.entries(r.fotos||{}).map(([k,p])=>[k,urls[p]]).filter(([k,u])=>u)),
+    extra:(r.extra||[]).map(p=>urls[p]).filter(Boolean)}));
+  const {data:o} = await db.from('objetivos').select('valores').maybeSingle();
+  estado.objetivos = (o && o.valores) || {};
+}
+// Sube una foto (dataURL) al almacén privado, dentro de tu carpeta
+async function subir(dataUrl, ruta){
+  const blob = await (await fetch(dataUrl)).blob();
+  const {error} = await db.storage.from('fotos').upload(ruta, blob, {contentType:'image/jpeg', upsert:true});
+  if(error) throw error; return ruta;
+}
+async function guardarRegistro(t){
+  const id = crypto.randomUUID(), fp = {}, ep = [];
+  for(const [k,d] of Object.entries(t.fotos)) fp[k] = await subir(d, `${uid}/${id}/${k}.jpg`);
+  for(let i=0;i<t.extra.length;i++) ep.push(await subir(t.extra[i], `${uid}/${id}/extra-${i}.jpg`));
+  const {error} = await db.from('registros').insert({id, fecha:t.fecha, medidas:t.m, fotos:fp, extra:ep});
+  if(error) throw error;
+}
+async function borrarRegistro(id){
+  const r = estado.registros.find(x=>x.id===id); if(!r) return;
+  const rutas = [...Object.values(r._fp), ...r._ep];
+  if(rutas.length) await db.storage.from('fotos').remove(rutas);
+  await db.from('registros').delete().eq('id', id);
+}
+// Los objetivos se guardan solos 0,6 s después de dejar de escribir
+let tObj;
+function guardarObjetivos(){ clearTimeout(tObj); tObj = setTimeout(()=>db.from('objetivos').upsert({user_id:uid, valores:estado.objetivos}), 600); }
+
+// Acceso: iniciar sesión, recordar sesión y salir
+function mostrarLogin(){ $('login').classList.remove('hide'); $('btnSalir').classList.add('hide'); $('lPass').value=''; }
+async function entrar(){
+  $('login').classList.add('hide'); $('btnSalir').classList.remove('hide');
+  try{ await cargarDatos(); }catch(e){ alert('No se pudieron cargar los datos: '+(e.message||e)); }
+  pintarTodo();
+}
+$('fLogin').onsubmit = async e=>{ e.preventDefault(); $('lErr').textContent='';
+  const {data, error} = await db.auth.signInWithPassword({email:$('lEmail').value.trim(), password:$('lPass').value});
+  if(error){ $('lErr').textContent='Correo o contraseña incorrectos.'; return; }
+  uid = data.user.id; await entrar(); };
+$('btnSalir').onclick = async ()=>{ await db.auth.signOut(); estado={objetivos:{},registros:[]}; uid=null; mostrarLogin(); };
+async function arrancar(){
+  const {data:{session}} = await db.auth.getSession();
+  if(session){ uid = session.user.id; await entrar(); } else mostrarLogin();
+}
+const ord = () => [...estado.registros].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+const fmt = f => f.slice(8)+'/'+f.slice(5,7);
+// Verde si el nuevo valor está más cerca de la meta que el anterior, rojo si más lejos, gris si no hay meta
+function claseObj(k,prev,nuevo){ const o=estado.objetivos[k]; if(o===undefined||prev===null||isNaN(prev)||nuevo===prev) return 'neu'; return Math.abs(nuevo-o)<Math.abs(prev-o)?'good':'bad'; }
+
+/* ===== BLOQUE 10: estadística: tendencia con los últimos registros ===== */
+// Pendiente (unidades por día) por mínimos cuadrados con los últimos 4 puntos
+function pendiente(p){
+  p = p.slice(-4); if(p.length<2) return null;
+  const n=p.length, x=p.map(q=>q.t/DIA), y=p.map(q=>q.v);
+  const mx=x.reduce((a,b)=>a+b)/n, my=y.reduce((a,b)=>a+b)/n;
+  const den=x.reduce((s,xi)=>s+(xi-mx)**2,0);
+  return den? x.reduce((s,xi,i)=>s+(xi-mx)*(y[i]-my),0)/den : null;
+}
+const puntos = k => ord().filter(r=>r.m[k]!==undefined).map(r=>({t:new Date(r.fecha).getTime(),v:r.m[k],f:r.fecha}));
+
+/* ===== BLOQUE 11: pantalla de inicio ===== */
+function spark(p,c){
+  if(p.length<2) return '';
+  const v=p.map(q=>q.v), lo=Math.min(...v), hi=Math.max(...v), W=120,H=34;
+  const pts=v.map((y,i)=>`${i/(v.length-1)*W},${H-3-(hi===lo?.5:(y-lo)/(hi-lo))*(H-6)}`).join(' ');
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+function pintarInicio(){
+  const regs=ord(); $('vacio').classList.toggle('hide',regs.length>0);
+  $('resumen').textContent = regs.length ? `${regs.length} registros · último: ${fmt(regs[regs.length-1].fecha)}` : '';
+  $('kpis').innerHTML = !regs.length ? '' : MEDIDAS.map(m=>{
+    const p=puntos(m.k); if(!p.length) return '';
+    const last=p[p.length-1].v, prev=p.length>1?p[p.length-2].v:null, first=p[0].v;
+    const d = prev===null?null:Math.round((last-prev)*10)/10, tot=Math.round((last-first)*10)/10;
+    const obj=estado.objetivos[m.k], s=pendiente(p), est = s===null?'':`≈ ${(last+s*7).toFixed(1)} ${m.u} en 1 sem`;
+    const cl = d===null?'neu':claseObj(m.k,prev,last);
+    return `<div class="glass kpi"><div class="n">${m.n}</div><div class="v">${last}<small> ${m.u}</small></div>
+      <div class="d ${cl}">${d===null?'—':(d>0?'▲ +':d<0?'▼ ':'= ')+d} <span style="color:var(--mute);font-weight:400">· total ${tot>0?'+':''}${tot}</span></div>
+      ${spark(p,m.c)}<div class="p">${est}${obj!==undefined?`<br>Meta: ${obj} ${m.u}`:''}</div></div>`; }).join('');
+}
+
+/* ===== BLOQUE 12: gráfica grande, estimación a 1 semana, objetivos y dato al pasar el ratón ===== */
+const ocultas = new Set(); let verObj=false;
+function pintarGrafica(){
+  // Botones: uno por medida (ocultar/mostrar) y uno para ver los objetivos
+  $('chips').innerHTML = MEDIDAS.map(m=>`<button class="chip ${ocultas.has(m.k)?'off':'on'}" style="--c:${m.c}" data-k="${m.k}">${m.n}</button>`).join('')
+    + `<button class="chip ${verObj?'on':'off'}" style="--c:#eef4ff" id="tgObj">Ver objetivos</button>`;
+  $('chips').querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{ ocultas.has(b.dataset.k)?ocultas.delete(b.dataset.k):ocultas.add(b.dataset.k); pintarGrafica(); });
+  $('tgObj').onclick=()=>{ verObj=!verObj; pintarGrafica(); };
+  const regs=ord(), cont=$('grafica');
+  if(regs.length<2){ cont.innerHTML='<p class="empty">Necesitas al menos 2 registros para ver la gráfica.</p>'; return; }
+  // Una serie por medida, en % respecto al primer valor; "fin" es la estimación a 7 días
+  const series = MEDIDAS.filter(m=>!ocultas.has(m.k)).map(m=>{
+    const p=puntos(m.k); if(!p.length) return null;
+    const base=p[0].v, py=p.map(q=>({t:q.t,v:(q.v-base)/base*100,raw:q.v,f:q.f})), s=pendiente(py), u=py[py.length-1];
+    const fin = s===null?null:{t:u.t+7*DIA, y:u.v+s*7, raw:base*(1+(u.v+s*7)/100)};
+    const ob=estado.objetivos[m.k], oy=(verObj&&ob!==undefined)?(ob-base)/base*100:null;
+    return {m,py,fin,ob,oy,u};
+  }).filter(Boolean);
+  if(!series.length){ cont.innerHTML='<p class="empty">Activa alguna medida.</p>'; return; }
+  const ys=series.flatMap(s=>[...s.py.map(q=>q.v),...(s.fin?[s.fin.y]:[]),...(s.oy!==null?[s.oy]:[])]);
+  const t0=new Date(regs[0].fecha).getTime(), t1=new Date(regs[regs.length-1].fecha).getTime(), t2=t1+7*DIA;
+  let lo=Math.min(0,...ys), hi=Math.max(0,...ys); const pad=(hi-lo||2)*.12; lo-=pad; hi+=pad;
+  // Tamaño según el ancho real de la pantalla, así el texto no se ve diminuto en el móvil
+  const W=Math.max(320,cont.clientWidth||640), H=Math.round(Math.max(340,W*.8)), L=46,R=12,T=14,B=28;
+  const X=t=>L+(t-t0)/(t2-t0)*(W-L-R), Y=y=>T+(hi-y)/(hi-lo)*(H-T-B);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfica de evolución">`;
+  for(let i=0;i<=4;i++){ const y=lo+(hi-lo)*i/4;
+    s+=`<line x1="${L}" x2="${W-R}" y1="${Y(y)}" y2="${Y(y)}" stroke="rgba(255,255,255,.1)"/><text x="${L-6}" y="${Y(y)+4}" text-anchor="end" font-size="12" fill="#9aa8c2">${y.toFixed(1)}%</text>`; }
+  s+=`<line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="#eef4ff" stroke-opacity=".5"/>`;
+  s+=`<rect x="${X(t1)}" y="${T}" width="${W-R-X(t1)}" height="${H-T-B}" fill="rgba(255,255,255,.05)"/><text x="${W-R-4}" y="${T+14}" text-anchor="end" font-size="11" fill="#9aa8c2">estimación</text>`;
+  s+=`<text x="${L}" y="${H-8}" font-size="12" fill="#9aa8c2">${fmt(regs[0].fecha)}</text><text x="${X(t1)}" y="${H-8}" text-anchor="middle" font-size="12" fill="#9aa8c2">${fmt(regs[regs.length-1].fecha)}</text><text x="${W-R}" y="${H-8}" text-anchor="end" font-size="12" fill="#9aa8c2">+1 sem</text>`;
+  const puntosHover=[];
+  series.forEach(se=>{
+    const c=se.m.c, u=se.m.u;
+    // Objetivo: línea punteada en la meta y línea tenue donde estás ahora
+    if(se.oy!==null){
+      s+=`<line x1="${L}" x2="${W-R}" y1="${Y(se.oy)}" y2="${Y(se.oy)}" stroke="${c}" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round"/><text x="${L+4}" y="${Y(se.oy)-5}" font-size="12" fill="${c}">Meta ${se.ob} ${u}</text>`;
+      s+=`<line x1="${L}" x2="${W-R}" y1="${Y(se.u.v)}" y2="${Y(se.u.v)}" stroke="${c}" stroke-opacity=".35"/><text x="${W-R-4}" y="${Y(se.u.v)-5}" text-anchor="end" font-size="12" fill="${c}">Ahora ${se.u.raw} ${u}</text>`;
+    }
+    s+=`<polyline fill="none" stroke="${c}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" points="${se.py.map(p=>X(p.t)+','+Y(p.v)).join(' ')}"/>`;
+    if(se.fin) s+=`<line x1="${X(se.u.t)}" y1="${Y(se.u.v)}" x2="${X(se.fin.t)}" y2="${Y(se.fin.y)}" stroke="${c}" stroke-width="2.4" stroke-dasharray="6 5" stroke-linecap="round"/><circle cx="${X(se.fin.t)}" cy="${Y(se.fin.y)}" r="4" fill="none" stroke="${c}" stroke-width="2"/>`;
+    se.py.forEach(p=>{ s+=`<circle cx="${X(p.t)}" cy="${Y(p.v)}" r="4.5" fill="${c}"/>`; puntosHover.push([X(p.t),Y(p.v),`${se.m.n} · ${fmt(p.f)}: ${p.raw} ${u} (${p.v>=0?'+':''}${p.v.toFixed(1)}%)`]); });
+    if(se.fin) puntosHover.push([X(se.fin.t),Y(se.fin.y),`${se.m.n} estimado en 1 semana: ${se.fin.raw.toFixed(1)} ${u}`]);
+  });
+  // Círculos invisibles más grandes encima: son los que responden al ratón o al dedo
+  puntosHover.forEach(([x,y,t])=>s+=`<circle cx="${x}" cy="${y}" r="12" fill="transparent" data-tip="${t}" style="cursor:pointer"/>`);
+  cont.innerHTML=s+'</svg>';
+  const tip=document.createElement('div'); tip.className='tip hide'; cont.appendChild(tip);
+  cont.querySelectorAll('circle[data-tip]').forEach(c=>{
+    const mostrar=()=>{ const a=cont.getBoundingClientRect(), b=c.getBoundingClientRect(); tip.textContent=c.dataset.tip; tip.classList.remove('hide');
+      tip.style.left=Math.min(Math.max(b.left-a.left+b.width/2,90),a.width-90)+'px'; tip.style.top=(b.top-a.top)+'px'; };
+    c.onpointerenter=mostrar; c.onpointerdown=mostrar; c.onpointerleave=e=>{ if(e.pointerType==='mouse') tip.classList.add('hide'); };
+  });
+  cont.onpointerdown=e=>{ if(!e.target.dataset||!e.target.dataset.tip) tip.classList.add('hide'); };
+}
+
+/* ===== BLOQUE 12b: pantalla de objetivos numéricos ===== */
+function falta(k){
+  const p=puntos(k), o=estado.objetivos[k]; if(!p.length||o===undefined) return '';
+  const d=Math.round((p[p.length-1].v-o)*10)/10; return d===0?'¡Meta!':(d>0?'▼ ':'▲ ')+Math.abs(d)+' para la meta';
+}
+function pintarObjetivos(){
+  $('objetivos').innerHTML = MEDIDAS.map(m=>{ const p=puntos(m.k), o=estado.objetivos[m.k];
+    return `<div class="field"><label for="ob-${m.k}">${m.n}<small>${p.length?'Ahora: '+p[p.length-1].v+' '+m.u:m.u}</small></label>
+    <input type="number" step="0.1" id="ob-${m.k}" data-k="${m.k}" value="${o??''}" placeholder="Meta"><span class="delta neu" id="fa-${m.k}" style="min-width:110px;font-size:.8rem">${falta(m.k)}</span></div>`; }).join('');
+  $('objetivos').querySelectorAll('input').forEach(inp=>inp.oninput=()=>{ const k=inp.dataset.k, v=parseFloat(inp.value);
+    if(isNaN(v)) delete estado.objetivos[k]; else estado.objetivos[k]=v;
+    guardarObjetivos(); $('fa-'+k).textContent=falta(k); pintarInicio(); pintarGrafica(); });
+}
+
+/* ===== BLOQUE 13: historial ===== */
+function pintarHistorial(){
+  const regs=ord().reverse(), c=$('historial');
+  if(!regs.length){ c.innerHTML='<p class="empty">Sin registros todavía.</p>'; return; }
+  c.innerHTML=`<table><tr><th>Fecha</th>${MEDIDAS.map(m=>`<th>${m.n}</th>`).join('')}<th>Fotos</th><th></th></tr>`+
+   regs.map(r=>`<tr><td>${r.fecha}</td>${MEDIDAS.map(m=>`<td>${r.m[m.k]??'–'}</td>`).join('')}<td>${Object.keys(r.fotos||{}).length}/4${(r.extra||[]).length?' +'+r.extra.length:''}</td>
+   <td><button class="del" data-id="${r.id}" aria-label="Borrar registro">✕</button></td></tr>`).join('')+'</table>';
+  c.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{ if(b.dataset.seguro!=='1'){ b.dataset.seguro='1'; b.textContent='¿Seguro?'; setTimeout(()=>{ b.dataset.seguro=''; b.textContent='✕'; },3000); return; }
+    b.disabled=true; await borrarRegistro(b.dataset.id); await cargarDatos(); pintarTodo(); });
+}
+
+/* ===== BLOQUE 14: comparador de fotos (primero postura, luego fecha) ===== */
+let postura='frente';
+function pintarFotos(){
+  $('posturas').innerHTML=[...POS,['extra','Extra']].map(([k,n])=>`<button class="${postura===k?'on':''}" data-p="${k}">${n}</button>`).join('');
+  $('posturas').querySelectorAll('button').forEach(b=>b.onclick=()=>{ postura=b.dataset.p; pintarFotos(); });
+  // Extra: galería con todas las fotos libres, sin comparador
+  const sel=postura!=='extra'; $('fotoA').classList.toggle('hide',!sel); $('fotoB').classList.toggle('hide',!sel);
+  if(!sel){ const ex=ord().flatMap(r=>(r.extra||[]).map(f=>({f,d:r.fecha})));
+    $('comparador').innerHTML=ex.length?ex.map(x=>`<figure style="margin:0"><img src="${x.f}" alt="Extra ${x.d}"><figcaption>${x.d}</figcaption></figure>`).join(''):'<p class="empty">Aún no hay fotos extra.</p>'; return; }
+  const con=ord().filter(r=>r.fotos&&r.fotos[postura]);
+  const A=$('fotoA'),B=$('fotoB'),a0=A.value,b0=B.value;
+  A.innerHTML=B.innerHTML=con.map(r=>`<option value="${r.id}">${r.fecha}</option>`).join('')||'<option value="">Sin fotos</option>';
+  if(con.length){ A.value=con.some(r=>r.id===a0)?a0:con[0].id; B.value=con.some(r=>r.id===b0)?b0:con[con.length-1].id; }
+  const dib=()=>{ const a=con.find(r=>r.id===A.value), b=con.find(r=>r.id===B.value);
+    $('comparador').innerHTML=!a?'<p class="empty">Aún no hay fotos de esta postura.</p>':
+    `<figure style="margin:0"><img src="${a.fotos[postura]}" alt="Antes"><figcaption>${a.fecha}</figcaption></figure><figure style="margin:0"><img src="${b.fotos[postura]}" alt="Después"><figcaption>${b.fecha}</figcaption></figure>`; };
+  A.onchange=B.onchange=dib; dib();
+}
+
+/* ===== BLOQUE 15: ventana de registro en 2 pasos (medidas → fotos) ===== */
+let tmp=null;
+function reducir(file){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>{ const i=new Image();
+  i.onload=()=>{ const s=Math.min(1,1000/Math.max(i.width,i.height)), cv=document.createElement('canvas'); cv.width=i.width*s; cv.height=i.height*s;
+    cv.getContext('2d').drawImage(i,0,0,cv.width,cv.height); res(cv.toDataURL('image/jpeg',.8)); }; i.src=r.result; }; r.readAsDataURL(file); }); }
+function anterior(f){ const p=ord().filter(r=>r.fecha<=f); return p.length?p[p.length-1]:null; }
+function abrirRegistro(){ tmp={fecha:new Date().toISOString().slice(0,10),m:{},fotos:{},extra:[]}; $('sheet').classList.remove('hide'); paso1(); }
+function cerrar(){ $('sheet').classList.add('hide'); }
+function paso1(){
+  const prev=anterior(tmp.fecha);
+  $('panel').innerHTML=`<h2>Nuevo registro · paso 1 de 2</h2>
+   <label>Fecha <input type="date" id="fecha" value="${tmp.fecha}"></label>
+   ${MEDIDAS.map(m=>{ const v=tmp.m[m.k]??prev?.m[m.k]??''; return `<div class="field"><label for="in-${m.k}">${m.n}<small>${prev&&prev.m[m.k]!==undefined?'Anterior: '+prev.m[m.k]+' '+m.u:m.u}</small></label>
+   <input type="number" step="0.1" id="in-${m.k}" value="${v}" data-k="${m.k}" data-p="${prev?.m[m.k]??''}"><span class="delta neu" id="d-${m.k}">—</span></div>`; }).join('')}
+   <div class="row"><button id="x">Cancelar</button><button class="pri" id="sig">Siguiente: fotos</button></div>`;
+  $('fecha').onchange=e=>{ leer(); tmp.fecha=e.target.value; tmp.m={}; paso1(); };
+  $('panel').querySelectorAll('input[data-k]').forEach(inp=>{ inp.onfocus=()=>inp.select();
+    inp.oninput=()=>{ const p=parseFloat(inp.dataset.p), v=parseFloat(inp.value), el=$('d-'+inp.dataset.k);
+      if(isNaN(p)||isNaN(v)){ el.textContent='—'; el.className='delta neu'; return; }
+      const d=Math.round((v-p)*10)/10; el.textContent=(d>0?'▲ +':d<0?'▼ ':'= ')+d; el.className='delta '+claseObj(inp.dataset.k,p,v); }; });
+  $('x').onclick=cerrar;
+  $('sig').onclick=()=>{ leer(); if(!Object.keys(tmp.m).length){ inp0(); return; } paso2(); };
+}
+function inp0(){ $('in-peso').focus(); }
+function leer(){ tmp.fecha=$('fecha').value||tmp.fecha; MEDIDAS.forEach(m=>{ const v=parseFloat($('in-'+m.k)?.value); if(!isNaN(v)) tmp.m[m.k]=v; }); }
+function paso2(){
+  $('panel').innerHTML=`<h2>Nuevo registro · paso 2 de 2</h2><p style="color:var(--mute);margin-top:0">Sube 4 fotos con la misma luz y distancia para comparar bien.</p>
+   <div class="slots">${POS.map(([k,n])=>`<label class="slot"><div id="ph-${k}">${tmp.fotos[k]?`<img src="${tmp.fotos[k]}" alt="${n}">`:'<div class="ph">＋</div>'}</div><b>${n}</b><input type="file" accept="image/*" data-k="${k}"></label>`).join('')}</div>
+   <div style="margin-top:12px"><b>Extra</b><span style="color:var(--mute)"> · fotos libres que quieras guardar</span>
+   <div class="ex">${tmp.extra.map(f=>`<img src="${f}" alt="Foto extra">`).join('')}</div>
+   <label class="btnlab">＋ Añadir fotos extra<input type="file" accept="image/*" multiple id="extraIn" hidden></label></div>
+   <p id="aviso" class="bad" style="min-height:1.2em"></p>
+   <div class="row" style="margin-top:0"><button id="atras">Atrás</button><button class="pri" id="ok">Guardar registro</button></div>`;
+  $('panel').querySelectorAll('input[type=file]').forEach(inp=>inp.onchange=async()=>{ if(!inp.files[0]) return;
+    tmp.fotos[inp.dataset.k]=await reducir(inp.files[0]); $('ph-'+inp.dataset.k).innerHTML=`<img src="${tmp.fotos[inp.dataset.k]}" alt="">`; });
+  $('extraIn').onchange=async e=>{ for(const f of e.target.files) tmp.extra.push(await reducir(f)); paso2(); };
+  $('atras').onclick=paso1;
+  $('ok').onclick=async()=>{ const falta=4-Object.keys(tmp.fotos).length;
+    if(falta && $('ok').dataset.seguro!=='1'){ $('aviso').textContent=`Faltan ${falta} foto(s). Pulsa otra vez para guardar sin ellas.`; $('ok').dataset.seguro='1'; return; }
+    $('ok').disabled=true; $('aviso').style.color='var(--mute)'; $('aviso').textContent='Guardando…';
+    try{ await guardarRegistro(tmp); await cargarDatos(); }
+    catch(e){ $('ok').disabled=false; $('aviso').style.color=''; $('aviso').textContent='No se pudo guardar: '+(e.message||e); return; }
+    cerrar(); pintarTodo(); };
+}
+
+/* ===== BLOQUE 16: menú, vistas y arranque ===== */
+const IC={inicio:'<path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"/>',grafica:'<path d="M3 20h18M5 16l4-5 4 3 6-8"/>',historial:'<path d="M4 6h16M4 12h16M4 18h10"/>',fotos:'<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="12" cy="12" r="3.5"/>',mas:'<path d="M12 5v14M5 12h14"/>',objetivos:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/>'};
+const VISTAS=[['inicio','Inicio'],['grafica','Gráfica'],['mas'],['objetivos','Objetivos'],['historial','Historial'],['fotos','Fotos']];
+let vista='inicio';
+function pintarMenu(){
+  $('menu').innerHTML=VISTAS.map(([k,n])=> k==='mas'
+   ?`<button class="plus" data-v="mas" aria-label="Nuevo registro"><svg viewBox="0 0 24 24">${IC.mas}</svg></button>`
+   :`<button class="${vista===k?'on':''}" data-v="${k}"><svg viewBox="0 0 24 24">${IC[k]}</svg>${n}</button>`).join('');
+  $('menu').querySelectorAll('button').forEach(b=>b.onclick=()=>{ if(b.dataset.v==='mas') return abrirRegistro(); vista=b.dataset.v; pintarTodo(); });
+}
+function pintarTodo(){
+  VISTAS.forEach(([k])=>{ if(k!=='mas') $('v-'+k).classList.toggle('hide',k!==vista); });
+  pintarMenu(); pintarInicio(); pintarObjetivos(); pintarGrafica(); pintarHistorial(); pintarFotos();
+}
+addEventListener('resize',()=>{ if(vista==='grafica') pintarGrafica(); });
+arrancar();
+</script>
+</body>
+</html>
