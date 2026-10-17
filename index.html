@@ -66,6 +66,10 @@ select option{color:#000}
 .tip{position:absolute;pointer-events:none;transform:translate(-50%,-100%);background:rgba(10,16,30,.94);border:1px solid var(--edge);border-radius:10px;padding:6px 10px;font-size:.82rem;white-space:nowrap;z-index:3}
 .btnlab{display:inline-block;cursor:pointer;border-radius:14px;padding:9px 14px;background:rgba(255,255,255,.1);border:1px solid var(--edge);font-weight:600}
 .ex{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}.ex img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:12px}
+.ex div{position:relative}.ex button{position:absolute;top:3px;right:3px;padding:1px 8px;background:rgba(0,0,0,.65);color:#ff7a6b;border:0;border-radius:10px}
+button.ed{padding:2px 8px;background:transparent;border:0;color:var(--a1)}
+.prev{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:.88rem;color:var(--mute)}
+.vid{margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.1)}.vid .nota{color:var(--mute);font-size:.82rem;margin:8px 0 0}
 .scroll{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:.9rem}
 th,td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.1);text-align:right;white-space:nowrap}
@@ -124,8 +128,9 @@ nav .plus svg{width:26px;height:26px;stroke-width:2.6}
   <!-- Vista: Gráfica -->
   <section id="v-grafica" class="hide">
     <div class="glass card">
-      <h2>Evolución y estimación a 1 semana</h2>
+      <h2>Evolución y estimación</h2>
       <p style="color:var(--mute);margin-top:0;font-size:.88rem">Escala común: % de cambio desde el primer registro. La línea discontinua es una estimación según tu ritmo reciente.</p>
+      <div class="prev" id="prev"></div>
       <div class="chips" id="chips"></div>
       <div id="grafica"></div>
     </div>
@@ -186,12 +191,15 @@ const MEDIDAS = [
 // Los objetivos son valores numéricos por medida: estado.objetivos = {peso:78, cintura:85, ...}
 const POS = [['frente','Frente'],['espalda','Trasera'],['izq','Perfil izquierdo'],['der','Perfil derecho']];
 const DIA = 86400000;
+// Días hasta la fecha de estimación (se recuerda en este navegador)
+let diasPrev = 7; try{ diasPrev = +localStorage.getItem('fm_prev') || 7; }catch(e){}
+const etqDias = d => d%7===0&&d<=28 ? (d/7)+(d===7?' semana':' semanas') : d%30===0 ? (d/30)+(d===30?' mes':' meses') : d+' días';
 
 /* ===== BLOQUE 9: conexión con Supabase (login, datos y fotos privadas) ===== */
 const SUPA_URL = 'https://siakyblxaekkgtxkbwke.supabase.co';
 const SUPA_KEY = 'sb_publishable_1L2wCXFUlpPbmCnngpDqPA_zqKjL5C2'; // clave pública: la seguridad la dan el login y las reglas RLS
 const db = supabase.createClient(SUPA_URL, SUPA_KEY);
-let estado = {objetivos:{}, registros:[]}, uid = null;
+let estado = {objetivos:{}, registros:[]}, uid = null, URLS = {};
 const $ = id => document.getElementById(id);
 
 // Descarga registros y objetivos; las fotos se piden con enlaces firmados que caducan (6 h)
@@ -205,6 +213,7 @@ async function cargarDatos(){
     const {data:f} = await db.storage.from('fotos').createSignedUrls(rutas, 21600);
     (f||[]).forEach(x=>{ if(x.signedUrl) urls[x.path]=x.signedUrl; });
   }
+  URLS = urls;
   // _fp y _ep guardan las rutas reales (para poder borrarlas); fotos y extra guardan los enlaces para mostrarlas
   estado.registros = rs.map(r=>({id:r.id, fecha:r.fecha, m:r.medidas||{}, _fp:r.fotos||{}, _ep:r.extra||[],
     fotos:Object.fromEntries(Object.entries(r.fotos||{}).map(([k,p])=>[k,urls[p]]).filter(([k,u])=>u)),
@@ -223,6 +232,16 @@ async function guardarRegistro(t){
   for(const [k,d] of Object.entries(t.fotos)) fp[k] = await subir(d, `${uid}/${id}/${k}.jpg`);
   for(let i=0;i<t.extra.length;i++) ep.push(await subir(t.extra[i], `${uid}/${id}/extra-${i}.jpg`));
   const {error} = await db.from('registros').insert({id, fecha:t.fecha, medidas:t.m, fotos:fp, extra:ep});
+  if(error) throw error;
+}
+// Edita un registro: cambia fecha y medidas, sube solo las fotos nuevas y conserva las que ya había
+async function actualizarRegistro(t){
+  const fp = {...t._fp}, ep = t.ex.map(x=>x.p);
+  for(const [k,d] of Object.entries(t.fotos)) fp[k] = await subir(d, `${uid}/${t.id}/${k}.jpg`);
+  for(const d of t.extra) ep.push(await subir(d, `${uid}/${t.id}/extra-${Date.now()}-${ep.length}.jpg`));
+  const quitadas = t.ep0.filter(p=>!ep.includes(p));
+  if(quitadas.length) await db.storage.from('fotos').remove(quitadas);
+  const {error} = await db.from('registros').update({fecha:t.fecha, medidas:t.m, fotos:fp, extra:ep}).eq('id', t.id);
   if(error) throw error;
 }
 async function borrarRegistro(id){
@@ -281,7 +300,7 @@ function pintarInicio(){
     const p=puntos(m.k); if(!p.length) return '';
     const last=p[p.length-1].v, prev=p.length>1?p[p.length-2].v:null, first=p[0].v;
     const d = prev===null?null:Math.round((last-prev)*10)/10, tot=Math.round((last-first)*10)/10;
-    const obj=estado.objetivos[m.k], s=pendiente(p), est = s===null?'':`≈ ${(last+s*7).toFixed(1)} ${m.u} en 1 sem`;
+    const obj=estado.objetivos[m.k], s=pendiente(p), est = s===null?'':`≈ ${(last+s*diasPrev).toFixed(1)} ${m.u} en ${etqDias(diasPrev)}`;
     const cl = d===null?'neu':claseObj(m.k,prev,last);
     return `<div class="glass kpi"><div class="n">${m.n}</div><div class="v">${last}<small> ${m.u}</small></div>
       <div class="d ${cl}">${d===null?'—':(d>0?'▲ +':d<0?'▼ ':'= ')+d} <span style="color:var(--mute);font-weight:400">· total ${tot>0?'+':''}${tot}</span></div>
@@ -290,7 +309,20 @@ function pintarInicio(){
 
 /* ===== BLOQUE 12: gráfica grande, estimación a 1 semana, objetivos y dato al pasar el ratón ===== */
 const ocultas = new Set(); let verObj=false;
+// Cambia los días de estimación y repinta lo que depende de ello
+function fijarPrev(d){ diasPrev=Math.max(1,Math.min(365,Math.round(d))); try{ localStorage.setItem('fm_prev',diasPrev); }catch(e){} pintarInicio(); pintarGrafica(); }
+// Control de la fecha de estimación: calendario y botones rápidos
+function pintarPrev(){
+  const regs=ord(), t1=regs.length?new Date(regs[regs.length-1].fecha).getTime():Date.now();
+  const f=new Date(t1+diasPrev*DIA).toISOString().slice(0,10), min=new Date(t1+DIA).toISOString().slice(0,10);
+  $('prev').innerHTML=`<span>Estimar hasta</span><input type="date" id="prevF" value="${f}" min="${min}">`
+   +[[7,'1 sem'],[14,'2 sem'],[21,'3 sem'],[30,'1 mes'],[90,'3 meses']].map(([d,n])=>`<button class="chip ${diasPrev===d?'on':'off'}" style="--c:#5eead4" data-d="${d}">${n}</button>`).join('')
+   +(diasPrev>30?'<span style="flex-basis:100%;font-size:.8rem">A más días, la estimación es menos fiable: solo prolonga en línea recta tu ritmo reciente.</span>':'');
+  $('prevF').onchange=e=>{ if(e.target.value) fijarPrev((new Date(e.target.value).getTime()-t1)/DIA); };
+  $('prev').querySelectorAll('button').forEach(b=>b.onclick=()=>fijarPrev(+b.dataset.d));
+}
 function pintarGrafica(){
+  pintarPrev();
   // Botones: uno por medida (ocultar/mostrar) y uno para ver los objetivos
   $('chips').innerHTML = MEDIDAS.map(m=>`<button class="chip ${ocultas.has(m.k)?'off':'on'}" style="--c:${m.c}" data-k="${m.k}">${m.n}</button>`).join('')
     + `<button class="chip ${verObj?'on':'off'}" style="--c:#eef4ff" id="tgObj">Ver objetivos</button>`;
@@ -302,13 +334,13 @@ function pintarGrafica(){
   const series = MEDIDAS.filter(m=>!ocultas.has(m.k)).map(m=>{
     const p=puntos(m.k); if(!p.length) return null;
     const base=p[0].v, py=p.map(q=>({t:q.t,v:(q.v-base)/base*100,raw:q.v,f:q.f})), s=pendiente(py), u=py[py.length-1];
-    const fin = s===null?null:{t:u.t+7*DIA, y:u.v+s*7, raw:base*(1+(u.v+s*7)/100)};
+    const fin = s===null?null:{t:u.t+diasPrev*DIA, y:u.v+s*diasPrev, raw:base*(1+(u.v+s*diasPrev)/100)};
     const ob=estado.objetivos[m.k], oy=(verObj&&ob!==undefined)?(ob-base)/base*100:null;
     return {m,py,fin,ob,oy,u};
   }).filter(Boolean);
   if(!series.length){ cont.innerHTML='<p class="empty">Activa alguna medida.</p>'; return; }
   const ys=series.flatMap(s=>[...s.py.map(q=>q.v),...(s.fin?[s.fin.y]:[]),...(s.oy!==null?[s.oy]:[])]);
-  const t0=new Date(regs[0].fecha).getTime(), t1=new Date(regs[regs.length-1].fecha).getTime(), t2=t1+7*DIA;
+  const t0=new Date(regs[0].fecha).getTime(), t1=new Date(regs[regs.length-1].fecha).getTime(), t2=t1+diasPrev*DIA;
   let lo=Math.min(0,...ys), hi=Math.max(0,...ys); const pad=(hi-lo||2)*.12; lo-=pad; hi+=pad;
   // Tamaño según el ancho real de la pantalla, así el texto no se ve diminuto en el móvil
   const W=Math.max(320,cont.clientWidth||640), H=Math.round(Math.max(340,W*.8)), L=46,R=12,T=14,B=28;
@@ -318,7 +350,7 @@ function pintarGrafica(){
     s+=`<line x1="${L}" x2="${W-R}" y1="${Y(y)}" y2="${Y(y)}" stroke="rgba(255,255,255,.1)"/><text x="${L-6}" y="${Y(y)+4}" text-anchor="end" font-size="12" fill="#9aa8c2">${y.toFixed(1)}%</text>`; }
   s+=`<line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="#eef4ff" stroke-opacity=".5"/>`;
   s+=`<rect x="${X(t1)}" y="${T}" width="${W-R-X(t1)}" height="${H-T-B}" fill="rgba(255,255,255,.05)"/><text x="${W-R-4}" y="${T+14}" text-anchor="end" font-size="11" fill="#9aa8c2">estimación</text>`;
-  s+=`<text x="${L}" y="${H-8}" font-size="12" fill="#9aa8c2">${fmt(regs[0].fecha)}</text><text x="${X(t1)}" y="${H-8}" text-anchor="middle" font-size="12" fill="#9aa8c2">${fmt(regs[regs.length-1].fecha)}</text><text x="${W-R}" y="${H-8}" text-anchor="end" font-size="12" fill="#9aa8c2">+1 sem</text>`;
+  s+=`<text x="${L}" y="${H-8}" font-size="12" fill="#9aa8c2">${fmt(regs[0].fecha)}</text><text x="${X(t1)}" y="${H-8}" text-anchor="middle" font-size="12" fill="#9aa8c2">${fmt(regs[regs.length-1].fecha)}</text><text x="${W-R}" y="${H-8}" text-anchor="end" font-size="12" fill="#9aa8c2">+${etqDias(diasPrev)}</text>`;
   const puntosHover=[];
   series.forEach(se=>{
     const c=se.m.c, u=se.m.u;
@@ -330,7 +362,7 @@ function pintarGrafica(){
     s+=`<polyline fill="none" stroke="${c}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" points="${se.py.map(p=>X(p.t)+','+Y(p.v)).join(' ')}"/>`;
     if(se.fin) s+=`<line x1="${X(se.u.t)}" y1="${Y(se.u.v)}" x2="${X(se.fin.t)}" y2="${Y(se.fin.y)}" stroke="${c}" stroke-width="2.4" stroke-dasharray="6 5" stroke-linecap="round"/><circle cx="${X(se.fin.t)}" cy="${Y(se.fin.y)}" r="4" fill="none" stroke="${c}" stroke-width="2"/>`;
     se.py.forEach(p=>{ s+=`<circle cx="${X(p.t)}" cy="${Y(p.v)}" r="4.5" fill="${c}"/>`; puntosHover.push([X(p.t),Y(p.v),`${se.m.n} · ${fmt(p.f)}: ${p.raw} ${u} (${p.v>=0?'+':''}${p.v.toFixed(1)}%)`]); });
-    if(se.fin) puntosHover.push([X(se.fin.t),Y(se.fin.y),`${se.m.n} estimado en 1 semana: ${se.fin.raw.toFixed(1)} ${u}`]);
+    if(se.fin) puntosHover.push([X(se.fin.t),Y(se.fin.y),`${se.m.n} estimado en ${etqDias(diasPrev)}: ${se.fin.raw.toFixed(1)} ${u}`]);
   });
   // Círculos invisibles más grandes encima: son los que responden al ratón o al dedo
   puntosHover.forEach(([x,y,t])=>s+=`<circle cx="${x}" cy="${y}" r="12" fill="transparent" data-tip="${t}" style="cursor:pointer"/>`);
@@ -362,9 +394,10 @@ function pintarObjetivos(){
 function pintarHistorial(){
   const regs=ord().reverse(), c=$('historial');
   if(!regs.length){ c.innerHTML='<p class="empty">Sin registros todavía.</p>'; return; }
-  c.innerHTML=`<table><tr><th>Fecha</th>${MEDIDAS.map(m=>`<th>${m.n}</th>`).join('')}<th>Fotos</th><th></th></tr>`+
+  c.innerHTML=`<table><tr><th>Fecha</th>${MEDIDAS.map(m=>`<th>${m.n}</th>`).join('')}<th>Fotos</th><th></th><th></th></tr>`+
    regs.map(r=>`<tr><td>${r.fecha}</td>${MEDIDAS.map(m=>`<td>${r.m[m.k]??'–'}</td>`).join('')}<td>${Object.keys(r.fotos||{}).length}/4${(r.extra||[]).length?' +'+r.extra.length:''}</td>
-   <td><button class="del" data-id="${r.id}" aria-label="Borrar registro">✕</button></td></tr>`).join('')+'</table>';
+   <td><button class="ed" data-id="${r.id}" aria-label="Editar registro">✎</button></td><td><button class="del" data-id="${r.id}" aria-label="Borrar registro">✕</button></td></tr>`).join('')+'</table>';
+  c.querySelectorAll('.ed').forEach(b=>b.onclick=()=>abrirRegistro(b.dataset.id));
   c.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{ if(b.dataset.seguro!=='1'){ b.dataset.seguro='1'; b.textContent='¿Seguro?'; setTimeout(()=>{ b.dataset.seguro=''; b.textContent='✕'; },3000); return; }
     b.disabled=true; await borrarRegistro(b.dataset.id); await cargarDatos(); pintarTodo(); });
 }
@@ -395,10 +428,14 @@ function pintarOverlay(a,b){
    <div class="ctl"><div class="seg" id="subs" style="margin-bottom:8px">${[['transp','Transparencia'],['cortina','Cortina'],['dif','Diferencia']].map(([k,n])=>`<button class="${subOver===k?'on':''}" data-s="${k}">${n}</button>`).join('')}</div>
    ${subOver==='dif'?'<p style="color:var(--mute);font-size:.85rem;margin:4px 0">Lo que no ha cambiado se ve oscuro y lo que ha cambiado se ve brillante.</p>':sl(subOver==='cortina'?'Divisor':'Transparencia','op',0,100)}
    ${sl('Zoom','z',50,200)}${sl('Mover ↔','x',-40,40)}${sl('Mover ↕','y',-40,40)}
-   <div class="row" style="justify-content:space-between"><button id="rst">Reiniciar ajuste</button><span style="color:var(--mute);font-size:.82rem">Abajo: ${a.fecha} · Arriba: ${b.fecha}</span></div></div>`;
+   <div class="row" style="justify-content:space-between"><button id="rst">Reiniciar ajuste</button><span style="color:var(--mute);font-size:.82rem">Abajo: ${a.fecha} · Arriba: ${b.fecha}</span></div>
+   <div class="vid"><b>Vídeo de la cortina</b>
+     <div class="row" style="justify-content:flex-start;margin-top:8px"><select id="vDur" aria-label="Duración"><option value="12">12 s</option><option value="18">18 s</option><option value="30">30 s</option></select><button class="pri" id="vGen">Crear vídeo MP4</button></div>
+     <p class="nota" id="vEst">Usa estas dos fotos con el zoom y la posición que has colocado. Mantén la pantalla abierta mientras se graba.</p></div></div>`;
   $('subs').querySelectorAll('button').forEach(x=>x.onclick=()=>{ subOver=x.dataset.s; pintarOverlay(a,b); });
   $('comparador').querySelectorAll('input[data-o]').forEach(i=>i.oninput=()=>{ ov[i.dataset.o]=+i.value; aplicarOv(); });
   $('rst').onclick=()=>{ Object.assign(ov,{z:100,x:0,y:0}); pintarOverlay(a,b); };
+  $('vGen').onclick=()=>crearVideo(a,b);
   aplicarOv();
 }
 function pintarFotos(){
@@ -413,11 +450,76 @@ function pintarFotos(){
   A.innerHTML=B.innerHTML=con.map(r=>`<option value="${r.id}">${r.fecha}</option>`).join('')||'<option value="">Sin fotos</option>';
   if(con.length){ A.value=con.some(r=>r.id===a0)?a0:con[0].id; B.value=con.some(r=>r.id===b0)?b0:con[con.length-1].id; }
   const dib=()=>{ const a=con.find(r=>r.id===A.value), b=con.find(r=>r.id===B.value);
-    if(!a){ $('comparador').className='pair'; $('comparador').innerHTML='<p class="empty">Aún no hay fotos de esta postura.</p>'; return; }
+    if(!a){ $('comparador').className='pair'; $('comparador').innerHTML='<p class="empty">Aún no hay fotos de esta postura. Puedes añadirlas a un registro ya guardado desde Historial, con el icono ✎.</p>'; return; }
     if(modoFotos==='over'){ pintarOverlay(a,b); return; }
     $('comparador').className='pair';
     $('comparador').innerHTML=`<figure style="margin:0"><img src="${a.fotos[postura]}" alt="Antes"><figcaption>${a.fecha}</figcaption></figure><figure style="margin:0"><img src="${b.fotos[postura]}" alt="Después"><figcaption>${b.fecha}</figcaption></figure>`; };
   A.onchange=B.onchange=dib; dib();
+}
+
+/* ===== BLOQUE 14c: vídeo de la cortina (se graba un lienzo y se descarga) ===== */
+// Descarga la foto privada y la convierte en una imagen que se puede dibujar sin problemas de permisos
+async function fotoImg(r){
+  const {data,error} = await db.storage.from('fotos').download(r._fp[postura]); if(error) throw error;
+  const img = new Image(); img.src = URL.createObjectURL(data);
+  await new Promise((ok,ko)=>{ img.onload=ok; img.onerror=ko; }); return img;
+}
+const FUENTE = '"Bricolage Grotesque",system-ui,-apple-system,sans-serif';
+function pill(ctx,x,y,w,h){ ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(x,y,w,h,24); else ctx.rect(x,y,w,h); ctx.fill(); ctx.stroke(); }
+// Cartel con la fecha y los kg de una foto
+function cartel(ctx,r,x,y,w){
+  ctx.fillStyle='rgba(8,14,28,.72)'; ctx.strokeStyle='rgba(255,255,255,.3)'; ctx.lineWidth=2; pill(ctx,x,y,w,108);
+  ctx.textAlign='left'; ctx.fillStyle='#9aa8c2'; ctx.font='500 27px '+FUENTE; ctx.fillText(r.fecha.split('-').reverse().join('/'),x+20,y+40);
+  ctx.fillStyle='#eef4ff'; ctx.font='800 46px '+FUENTE; ctx.fillText(r.m.peso!==undefined?r.m.peso+' kg':'— kg',x+20,y+88);
+}
+// Un fotograma: foto de abajo entera, foto de arriba solo a la izquierda de la cortina (p de 0 a 1)
+function dibujarFrame(ctx,W,H,imA,imB,a,b,p){
+  const cover=im=>{ const s=Math.max(W/im.width,H/im.height), w=im.width*s, h=im.height*s; ctx.drawImage(im,(W-w)/2,(H-h)/2,w,h); };
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); cover(imA);
+  ctx.save(); ctx.beginPath(); ctx.rect(0,0,W*p,H); ctx.clip();
+  ctx.translate(W/2+ov.x/100*W,H/2+ov.y/100*H); ctx.scale(ov.z/100,ov.z/100); ctx.translate(-W/2,-H/2);   // mismo zoom y posición que en pantalla
+  cover(imB); ctx.restore();
+  // Línea de la cortina con su tirador
+  const x=W*p; ctx.save(); ctx.shadowColor='#5eead4'; ctx.shadowBlur=18; ctx.fillStyle='#5eead4'; ctx.fillRect(x-2,0,4,H);
+  ctx.beginPath(); ctx.arc(x,H/2,24,0,6.2832); ctx.fillStyle='rgba(8,14,28,.85)'; ctx.fill(); ctx.strokeStyle='#5eead4'; ctx.lineWidth=3; ctx.stroke(); ctx.restore();
+  ctx.fillStyle='#5eead4'; ctx.font='800 26px '+FUENTE; ctx.textAlign='center'; ctx.fillText('‹›',x,H/2+9);
+  // Fechas y kg: a la izquierda la foto de arriba, a la derecha la de abajo
+  cartel(ctx,b,24,24,240); cartel(ctx,a,W-264,24,240);
+  // Diferencia de peso y días entre las dos fechas
+  const [ant,nue]=a.fecha<=b.fecha?[a,b]:[b,a], dias=Math.round((new Date(nue.fecha)-new Date(ant.fecha))/DIA);
+  if(ant.m.peso!==undefined&&nue.m.peso!==undefined){
+    const d=Math.round((nue.m.peso-ant.m.peso)*10)/10, t=`${d>0?'+':d<0?'−':''}${Math.abs(d)} kg · ${dias} días`;
+    ctx.font='800 38px '+FUENTE; const w=ctx.measureText(t).width+56;
+    ctx.fillStyle='rgba(8,14,28,.75)'; ctx.strokeStyle='rgba(255,255,255,.3)'; pill(ctx,(W-w)/2,H-120,w,70);
+    ctx.fillStyle='#eef4ff'; ctx.textAlign='center'; ctx.fillText(t,W/2,H-71);
+  }
+  ctx.fillStyle='rgba(255,255,255,.65)'; ctx.font='600 20px '+FUENTE; ctx.textAlign='center'; ctx.fillText('FormaMetrics',W/2,H-18);
+}
+async function crearVideo(a,b){
+  const est=$('vEst'), btn=$('vGen'); btn.disabled=true;
+  try{
+    if(typeof MediaRecorder==='undefined'||!HTMLCanvasElement.prototype.captureStream) throw new Error('este navegador no puede grabar vídeo');
+    est.textContent='Preparando las fotos…';
+    const [imA,imB]=await Promise.all([fotoImg(a),fotoImg(b)]);
+    const W=720,H=960, cv=document.createElement('canvas'); cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
+    // MP4 si el navegador lo permite (Safari y Chrome recientes); si no, WebM
+    const tipo=['video/mp4;codecs=avc1.42E01E','video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'';
+    const dur=+$('vDur').value, ciclo=6, partes=[];   // la cortina va y vuelve cada 6 s, así el vídeo enlaza en bucle
+    const rec=new MediaRecorder(cv.captureStream(30), tipo?{mimeType:tipo,videoBitsPerSecond:5e6}:{});
+    rec.ondataavailable=e=>{ if(e.data.size) partes.push(e.data); };
+    const fin=new Promise(ok=>rec.onstop=ok);
+    const t0=performance.now(); rec.start(500);
+    await new Promise(ok=>{ const paso=()=>{ const t=(performance.now()-t0)/1000;
+      dibujarFrame(ctx,W,H,imA,imB,a,b,.5-.5*Math.cos(2*Math.PI*t/ciclo));
+      const e2=$('vEst'); if(e2) e2.textContent=`Grabando… ${Math.min(dur,Math.ceil(t))} / ${dur} s (no cierres esta pantalla)`;
+      if(t>=dur) ok(); else requestAnimationFrame(paso); }; paso(); });
+    rec.stop(); await fin;
+    const mime=(rec.mimeType||tipo||'video/webm').split(';')[0], ext=mime.includes('mp4')?'mp4':'webm';
+    const blob=new Blob(partes,{type:mime}), url=URL.createObjectURL(blob), nombre=`formametrics-${a.fecha}-${b.fecha}.${ext}`;
+    const e3=$('vEst'); if(e3) e3.innerHTML=`Vídeo listo (${(blob.size/1e6).toFixed(1)} MB). <a href="${url}" download="${nombre}" style="color:var(--a1)">Descargar ${ext.toUpperCase()}</a>`+(ext==='webm'?' · Tu navegador solo graba WebM; en Safari o Chrome recientes sale en MP4.':'');
+    const l=document.createElement('a'); l.href=url; l.download=nombre; l.click();
+  }catch(e){ const e4=$('vEst'); if(e4) e4.textContent='No se pudo crear el vídeo: '+(e.message||e); }
+  const b2=$('vGen'); if(b2) b2.disabled=false;
 }
 
 /* ===== BLOQUE 15: ventana de registro en 2 pasos (medidas → fotos) ===== */
@@ -425,17 +527,23 @@ let tmp=null;
 function reducir(file){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>{ const i=new Image();
   i.onload=()=>{ const s=Math.min(1,1000/Math.max(i.width,i.height)), cv=document.createElement('canvas'); cv.width=i.width*s; cv.height=i.height*s;
     cv.getContext('2d').drawImage(i,0,0,cv.width,cv.height); res(cv.toDataURL('image/jpeg',.8)); }; i.src=r.result; }; r.readAsDataURL(file); }); }
-function anterior(f){ const p=ord().filter(r=>r.fecha<=f); return p.length?p[p.length-1]:null; }
-function abrirRegistro(){ tmp={fecha:new Date().toISOString().slice(0,10),m:{},fotos:{},extra:[]}; $('sheet').classList.remove('hide'); paso1(); }
+function anterior(f){ const p=ord().filter(r=>r.fecha<=f&&!(tmp&&tmp.id===r.id)); return p.length?p[p.length-1]:null; }
+// Sin argumento abre un registro nuevo; con el id de un registro, lo abre para editarlo
+function abrirRegistro(id){
+  const r = typeof id==='string' ? estado.registros.find(x=>x.id===id) : null;
+  tmp = r ? {id:r.id, fecha:r.fecha, m:{...r.m}, fotos:{}, extra:[], _fp:{...r._fp}, urlsF:{...r.fotos}, ex:r._ep.map(p=>({p,u:URLS[p]||''})), ep0:[...r._ep]}
+          : {fecha:new Date().toISOString().slice(0,10), m:{}, fotos:{}, extra:[], _fp:{}, urlsF:{}, ex:[], ep0:[]};
+  $('sheet').classList.remove('hide'); paso1();
+}
 function cerrar(){ $('sheet').classList.add('hide'); }
 function paso1(){
   const prev=anterior(tmp.fecha);
-  $('panel').innerHTML=`<h2>Nuevo registro · paso 1 de 2</h2>
+  $('panel').innerHTML=`<h2>${tmp.id?'Editar registro':'Nuevo registro'} · paso 1 de 2</h2>
    <label>Fecha <input type="date" id="fecha" value="${tmp.fecha}"></label>
-   ${MEDIDAS.map(m=>{ const v=tmp.m[m.k]??prev?.m[m.k]??''; return `<div class="field"><label for="in-${m.k}">${m.n}<small>${prev&&prev.m[m.k]!==undefined?'Anterior: '+prev.m[m.k]+' '+m.u:m.u}</small></label>
+   ${MEDIDAS.map(m=>{ const v=tmp.m[m.k]??(tmp.id?'':prev?.m[m.k])??''; return `<div class="field"><label for="in-${m.k}">${m.n}<small>${prev&&prev.m[m.k]!==undefined?'Anterior: '+prev.m[m.k]+' '+m.u:m.u}</small></label>
    <input type="number" step="0.1" id="in-${m.k}" value="${v}" data-k="${m.k}" data-p="${prev?.m[m.k]??''}"><span class="delta neu" id="d-${m.k}">—</span></div>`; }).join('')}
    <div class="row"><button id="x">Cancelar</button><button class="pri" id="sig">Siguiente: fotos</button></div>`;
-  $('fecha').onchange=e=>{ leer(); tmp.fecha=e.target.value; tmp.m={}; paso1(); };
+  $('fecha').onchange=e=>{ leer(); tmp.fecha=e.target.value; if(!tmp.id) tmp.m={}; paso1(); };
   $('panel').querySelectorAll('input[data-k]').forEach(inp=>{ inp.onfocus=()=>inp.select();
     inp.oninput=()=>{ const p=parseFloat(inp.dataset.p), v=parseFloat(inp.value), el=$('d-'+inp.dataset.k);
       if(isNaN(p)||isNaN(v)){ el.textContent='—'; el.className='delta neu'; return; }
@@ -444,23 +552,24 @@ function paso1(){
   $('sig').onclick=()=>{ leer(); if(!Object.keys(tmp.m).length){ inp0(); return; } paso2(); };
 }
 function inp0(){ $('in-peso').focus(); }
-function leer(){ tmp.fecha=$('fecha').value||tmp.fecha; MEDIDAS.forEach(m=>{ const v=parseFloat($('in-'+m.k)?.value); if(!isNaN(v)) tmp.m[m.k]=v; }); }
+function leer(){ tmp.fecha=$('fecha').value||tmp.fecha; MEDIDAS.forEach(m=>{ const el=$('in-'+m.k); if(!el) return; const v=parseFloat(el.value); if(!isNaN(v)) tmp.m[m.k]=v; else delete tmp.m[m.k]; }); }
 function paso2(){
-  $('panel').innerHTML=`<h2>Nuevo registro · paso 2 de 2</h2><p style="color:var(--mute);margin-top:0">Sube 4 fotos con la misma luz y distancia para comparar bien.</p>
-   <div class="slots">${POS.map(([k,n])=>`<label class="slot"><div id="ph-${k}">${tmp.fotos[k]?`<img src="${tmp.fotos[k]}" alt="${n}">`:'<div class="ph">＋</div>'}</div><b>${n}</b><input type="file" accept="image/*" data-k="${k}"></label>`).join('')}</div>
+  $('panel').innerHTML=`<h2>${tmp.id?'Editar registro':'Nuevo registro'} · paso 2 de 2</h2><p style="color:var(--mute);margin-top:0">Sube 4 fotos con la misma luz y distancia para comparar bien.</p>
+   <div class="slots">${POS.map(([k,n])=>`<label class="slot"><div id="ph-${k}">${(tmp.fotos[k]||tmp.urlsF[k])?`<img src="${tmp.fotos[k]||tmp.urlsF[k]}" alt="${n}">`:'<div class="ph">＋</div>'}</div><b>${n}</b><input type="file" accept="image/*" data-k="${k}"></label>`).join('')}</div>
    <div style="margin-top:12px"><b>Extra</b><span style="color:var(--mute)"> · fotos libres que quieras guardar</span>
-   <div class="ex">${tmp.extra.map(f=>`<img src="${f}" alt="Foto extra">`).join('')}</div>
+   <div class="ex">${[...tmp.ex.map((x,i)=>({u:x.u,t:'ex',i})),...tmp.extra.map((u,i)=>({u,t:'nu',i}))].map(x=>`<div>${x.u?`<img src="${x.u}" alt="Foto extra">`:''}<button data-t="${x.t}" data-i="${x.i}" aria-label="Quitar foto">✕</button></div>`).join('')}</div>
    <label class="btnlab">＋ Añadir fotos extra<input type="file" accept="image/*" multiple id="extraIn" hidden></label></div>
    <p id="aviso" class="bad" style="min-height:1.2em"></p>
-   <div class="row" style="margin-top:0"><button id="atras">Atrás</button><button class="pri" id="ok">Guardar registro</button></div>`;
+   <div class="row" style="margin-top:0"><button id="atras">Atrás</button><button class="pri" id="ok">${tmp.id?'Guardar cambios':'Guardar registro'}</button></div>`;
   $('panel').querySelectorAll('input[type=file]').forEach(inp=>inp.onchange=async()=>{ if(!inp.files[0]) return;
     tmp.fotos[inp.dataset.k]=await reducir(inp.files[0]); $('ph-'+inp.dataset.k).innerHTML=`<img src="${tmp.fotos[inp.dataset.k]}" alt="">`; });
   $('extraIn').onchange=async e=>{ for(const f of e.target.files) tmp.extra.push(await reducir(f)); paso2(); };
+  $('panel').querySelectorAll('.ex button').forEach(b=>b.onclick=()=>{ (b.dataset.t==='ex'?tmp.ex:tmp.extra).splice(+b.dataset.i,1); paso2(); });
   $('atras').onclick=paso1;
-  $('ok').onclick=async()=>{ const falta=4-Object.keys(tmp.fotos).length;
+  $('ok').onclick=async()=>{ const falta=POS.filter(([k])=>!tmp.fotos[k]&&!tmp.urlsF[k]).length;
     if(falta && $('ok').dataset.seguro!=='1'){ $('aviso').textContent=`Faltan ${falta} foto(s). Pulsa otra vez para guardar sin ellas.`; $('ok').dataset.seguro='1'; return; }
     $('ok').disabled=true; $('aviso').style.color='var(--mute)'; $('aviso').textContent='Guardando…';
-    try{ await guardarRegistro(tmp); await cargarDatos(); }
+    try{ await (tmp.id?actualizarRegistro(tmp):guardarRegistro(tmp)); await cargarDatos(); }
     catch(e){ $('ok').disabled=false; $('aviso').style.color=''; $('aviso').textContent='No se pudo guardar: '+(e.message||e); return; }
     cerrar(); pintarTodo(); };
 }
